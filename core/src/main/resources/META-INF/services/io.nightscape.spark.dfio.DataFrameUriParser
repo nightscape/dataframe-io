@@ -1,0 +1,3 @@
+dev.mauch.spark.dfio.ConsoleUriParser
+dev.mauch.spark.dfio.ParquetUriParser
+dev.mauch.spark.dfio.TextFileUriParser
