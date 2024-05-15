@@ -29,7 +29,7 @@ For transformations, the following options are available:
 
 ## Running
 The `etl` module contains a main class called `dev.mauch.spark.dfio.ETL`.
-You can call it e.g. through sbt
+You can call it e.g. through
 ```shell
 mill etl.run --help
 ```
