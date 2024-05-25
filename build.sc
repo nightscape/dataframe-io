@@ -112,18 +112,18 @@ trait SolrModule extends DfioModule {
 object solr extends Cross[SolrModule](crossMatrix)
 
 trait UriParserModule extends DfioModule with HwcModule with ConfluentRepo {
-  val hiveModuleDep = if (crossValue < "2.13") Seq(hive()) else Seq()
-  def moduleDeps = Seq(core(), serde(), excel(), kafka(), solr()) ++ hiveModuleDep
+  def moduleDeps = Seq(core(), serde())
+  def ivyDeps = Agg(
+    ivy"org.scala-lang.modules::scala-collection-compat:2.12.0",
+  )
   def scalacOptions = Seq("-Xexperimental")
 }
 object `uri-parser` extends Cross[UriParserModule](crossMatrix)
 
 trait EtlModule extends DfioModule with HwcModule with ConfluentRepo with BuildInfo {
-  //def mainClass = Some("dev.mauch.spark.dfio.ETL")
+  def mainClass = Some("dev.mauch.spark.dfio.ETL")
   //def finalMainClassOpt = Left[String, String]("none")
-  val hiveModuleDep = if (crossValue < "2.13") Seq(hive()) else Seq()
-  def moduleDeps = Seq(core(), serde(), excel(), kafka(), solr(), `uri-parser`()) ++ hiveModuleDep
-  //def artifactName = "etl"
+  def moduleDeps = Seq(core(), serde(), `uri-parser`())
   def ivyDeps = Agg(
     ivy"org.apache.spark::spark-sql:$sparkVersion",
     ivy"com.lihaoyi::mainargs:0.6.3",
