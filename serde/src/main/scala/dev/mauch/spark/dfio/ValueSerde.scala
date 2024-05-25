@@ -19,6 +19,12 @@ object ValueSerde {
           case AvroSchemaRegistrySerde(serde) => serde
           case AvroSchemaSerde(serde) => serde
         }
+      case "none" => NoneSerde
     }
 
+}
+
+object NoneSerde extends ValueSerde {
+  override def serialize(df: DataFrame): DataFrame = df
+  override def deserialize(df: DataFrame): DataFrame = df
 }
