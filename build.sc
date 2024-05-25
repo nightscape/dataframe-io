@@ -143,6 +143,8 @@ trait EtlModule extends DfioModule with HwcModule with ConfluentRepo with BuildI
       BuildInfo.Value("formattedShaVersion", "TODO"),
       BuildInfo.Value("scalaVersion", scalaVersion()),
       BuildInfo.Value("sparkVersion", sparkVersion),
+      BuildInfo.Value("readme", os.read(millSourcePath / os.up / "README.md"))
     )
+  def resources = super.resources() ++ Seq(PathRef(millSourcePath / os.up / "README.md"))
 }
 object etl extends Cross[EtlModule](crossMatrix)
