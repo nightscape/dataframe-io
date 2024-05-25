@@ -26,6 +26,7 @@ case class KafkaDataFrameSource(
       .format("kafka")
       .option("kafka.bootstrap.servers", broker)
       .option("subscribe", topic)
+      .options(additionalOptions)
       .load()
     serdeInstance.deserialize(df)
   }
@@ -37,6 +38,7 @@ case class KafkaDataFrameSource(
       .format("kafka")
       .option("kafka.bootstrap.servers", broker)
       .option("topic", topic)
+      .options(additionalOptions)
       .save()
     true
   }
