@@ -1,3 +1,6 @@
+import $ivy.`com.lihaoyi::mill-contrib-sonatypecentral:0.11.7-109-59a5cb`
+import mill.contrib.sonatypecentral.SonatypeCentralPublishModule
+
 import coursier.maven.MavenRepository
 import mill._, scalalib._, scalalib.publish._, scalafmt._
 import mill.define.Cross.Resolver
@@ -6,19 +9,20 @@ import $ivy.`com.lihaoyi::mill-contrib-buildinfo:`
 import mill.contrib.buildinfo.BuildInfo
 import $ivy.`io.chris-kipp::mill-ci-release::0.1.9`
 import io.kipp.mill.ci.release.CiReleaseModule
+import de.tobiasroeser.mill.vcs.version.VcsVersion
 
 val url = "https://github.com/nightscape/dataframe-io"
-
-trait DfioModule extends CrossScalaModule with Cross.Module2[String, String] with SbtModule with CiReleaseModule with ScalafmtModule {
+object build extends Module {
+  def publishVersion = T {
+    VcsVersion.vcsState().format(untaggedSuffix = "-SNAPSHOT")
+  }
+}
+trait DfioModule extends CrossScalaModule with Cross.Module2[String, String] with SbtModule with SonatypeCentralPublishModule with CiReleaseModule with ScalafmtModule {
   val sparkVersion = crossValue2
   val Array(sparkMajor, sparkMinor, sparkPatch) = sparkVersion.split("\\.")
   val sparkBinaryVersion = s"$sparkMajor.$sparkMinor"
   override def artifactNameParts: T[Seq[String]] =
     Seq(super.artifactNameParts().head, "spark", sparkBinaryVersion)
-
-  def sonatypeUri: String = sys.env.getOrElse("SONATYPE_URL", "https://define.it.via.env/SONATYPE_URL")
-  def sonatypeSnapshotUri: String = sys.env.getOrElse("SONATYPE_SNAPSHOT_URL", "https://define.it.via.env/SONATYPE_SNAPSHOT_URL")
-  override def stagingRelease = false
 
   def compileIvyDeps = Agg(
     ivy"org.apache.spark::spark-core:$sparkVersion",

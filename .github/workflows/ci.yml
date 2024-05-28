@@ -131,8 +131,5 @@ jobs:
           echo "$PGP_PASSPHRASE" | gpg --pinentry-mode loopback --passphrase-fd 0 --import /tmp/signing-key.gpg
           (echo "$PGP_PASSPHRASE"; echo; echo) | gpg --command-fd 0 --pinentry-mode loopback --change-passphrase $(gpg --list-secret-keys --with-colons 2> /dev/null | grep '^sec:' | cut --delimiter ':' --fields 5 | tail -n 1)
 
-      - uses: jodersky/setup-mill@master
-        with:
-          mill-version: 0.11.6
       - name: Publish
-        run: mill -i io.kipp.mill.ci.release.ReleaseModule/publishAll
+        run: ./mill -i mill.contrib.sonatypecentral.SonatypeCentralPublishModule/publishAll --publishArtifacts __.publishArtifacts --shouldRelease true --bundleName dev.mauch.spark-dfio-$(./mill show build.publishVersion | tr -d '"')
