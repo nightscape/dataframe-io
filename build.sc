@@ -1,4 +1,4 @@
-import $ivy.`com.lihaoyi::mill-contrib-sonatypecentral:0.11.7-109-59a5cb`
+import $ivy.`com.lihaoyi::mill-contrib-sonatypecentral:0.11.8`
 import mill.contrib.sonatypecentral.SonatypeCentralPublishModule
 
 import coursier.maven.MavenRepository
@@ -7,7 +7,7 @@ import mill.define.Cross.Resolver
 import mill.scalalib.Assembly._
 import $ivy.`com.lihaoyi::mill-contrib-buildinfo:`
 import mill.contrib.buildinfo.BuildInfo
-import $ivy.`io.chris-kipp::mill-ci-release::0.1.9`
+import $ivy.`io.chris-kipp::mill-ci-release::0.1.10`
 import io.kipp.mill.ci.release.CiReleaseModule
 import de.tobiasroeser.mill.vcs.version.VcsVersion
 
@@ -17,27 +17,28 @@ object build extends Module {
     VcsVersion.vcsState().format(untaggedSuffix = "-SNAPSHOT")
   }
 }
-trait DfioModule extends CrossScalaModule with Cross.Module2[String, String] with SbtModule with SonatypeCentralPublishModule with CiReleaseModule with ScalafmtModule {
+trait DfioModule
+    extends CrossScalaModule
+    with Cross.Module2[String, String]
+    with SbtModule
+    with SonatypeCentralPublishModule
+    with CiReleaseModule
+    with ScalafmtModule {
   val sparkVersion = crossValue2
   val Array(sparkMajor, sparkMinor, sparkPatch) = sparkVersion.split("\\.")
   val sparkBinaryVersion = s"$sparkMajor.$sparkMinor"
   override def artifactNameParts: T[Seq[String]] =
     Seq(super.artifactNameParts().head, "spark", sparkBinaryVersion)
 
-  def compileIvyDeps = Agg(
-    ivy"org.apache.spark::spark-core:$sparkVersion",
-    ivy"org.apache.spark::spark-sql:$sparkVersion"
-  )
+  def compileIvyDeps =
+    Agg(ivy"org.apache.spark::spark-core:$sparkVersion", ivy"org.apache.spark::spark-sql:$sparkVersion")
   def pomSettings = PomSettings(
     description = "A Spark library for reading and writing from/to various data sources",
     organization = "dev.mauch.spark.dfio",
     url = url,
     licenses = Seq(License.MIT),
-    versionControl = VersionControl(
-      browsableRepository = Some(url),
-      connection = Some(s"scm:git:$url.git"),
-    ),
-    developers = Seq(Developer("nightscape", "Martin Mauch", "https://github.com/nightscape")),
+    versionControl = VersionControl(browsableRepository = Some(url), connection = Some(s"scm:git:$url.git")),
+    developers = Seq(Developer("nightscape", "Martin Mauch", "https://github.com/nightscape"))
   )
   override implicit def crossSbtModuleResolver: Resolver[CrossModuleBase] = new Resolver[CrossModuleBase] {
     def resolve[V <: CrossModuleBase](c: Cross[V]): V = c.valuesToModules(List(crossValue, crossValue2))
@@ -69,7 +70,6 @@ val crossMatrix212 = sparkVersions.map(spark => (scala212, spark))
 val crossMatrix213 = sparkVersions.filter(_ >= "3.2").map(spark => (scala213, spark))
 val crossMatrix = crossMatrix212 ++ crossMatrix213
 
-
 object core extends Cross[DfioModule](crossMatrix)
 
 trait SerdeModule extends DfioModule with ConfluentRepo {
@@ -86,9 +86,9 @@ trait HiveModule extends DfioModule with HwcModule {
   def moduleDeps = Seq(core())
   def compileIvyDeps = Agg(
     ivy"com.hortonworks.hive::hive-warehouse-connector-spark3:1.0.0.7.2.17.0-334"
-      .exclude("net.minidev"-> "json-smart")
-      .exclude("net.shibboleth.tool"-> "xmlsectool")
-      .exclude("org.cloudera.logredactor"-> "logredactor")
+      .exclude("net.minidev" -> "json-smart")
+      .exclude("net.shibboleth.tool" -> "xmlsectool")
+      .exclude("org.cloudera.logredactor" -> "logredactor")
       .excludeOrg("androidx.annotation")
   )
 }
@@ -108,37 +108,31 @@ object kafka extends Cross[KafkaModule](crossMatrix)
 
 trait SolrModule extends DfioModule {
   def moduleDeps = Seq(core())
-  def ivyDeps = Agg(
-    ivy"org.apache.solr:solr-solrj:9.5.0",
-    ivy"commons-codec:commons-codec:1.15"
-  )
+  def ivyDeps = Agg(ivy"org.apache.solr:solr-solrj:9.5.0", ivy"commons-codec:commons-codec:1.15")
 }
 object solr extends Cross[SolrModule](crossMatrix)
 
 trait UriParserModule extends DfioModule with HwcModule with ConfluentRepo {
   def moduleDeps = Seq(core(), serde())
-  def ivyDeps = Agg(
-    ivy"org.scala-lang.modules::scala-collection-compat:2.12.0",
-  )
+  def ivyDeps = Agg(ivy"org.scala-lang.modules::scala-collection-compat:2.12.0")
   def scalacOptions = Seq("-Xexperimental")
 }
 object `uri-parser` extends Cross[UriParserModule](crossMatrix)
 
 trait EtlModule extends DfioModule with HwcModule with ConfluentRepo with BuildInfo {
   def mainClass = Some("dev.mauch.spark.dfio.ETL")
-  //def finalMainClassOpt = Left[String, String]("none")
+  // def finalMainClassOpt = Left[String, String]("none")
   def moduleDeps = Seq(core(), serde(), `uri-parser`())
-  def ivyDeps = Agg(
-    ivy"org.apache.spark::spark-sql:$sparkVersion",
-    ivy"com.lihaoyi::mainargs:0.6.3",
-  ).map(_.excludeOrg("androidx.annotation"))
+  def ivyDeps = Agg(ivy"org.apache.spark::spark-sql:$sparkVersion", ivy"com.lihaoyi::mainargs:0.6.3").map(
+    _.excludeOrg("androidx.annotation")
+  )
   def assemblyRules = super.assemblyRules ++ Seq(
     Rule.AppendPattern("META-INF/services/.*"),
     Rule.Append("application.conf"), // all application.conf files will be concatenated into single file
     Rule.AppendPattern(".*\\.conf"), // all *.conf files will be concatenated into single file
     Rule.ExcludePattern(".*.temp"), // all *.temp files will be excluded from a final jar
     Rule.ExcludePattern("scala/.*"),
-    Rule.ExcludePattern("org\\.apache\\.spark/.*"),
+    Rule.ExcludePattern("org\\.apache\\.spark/.*")
   )
   def buildInfoPackageName = "dev.mauch.spark.dfio"
   def buildInfoMembers =
