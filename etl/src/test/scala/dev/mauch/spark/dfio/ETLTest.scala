@@ -14,11 +14,23 @@ import zio.kafka.consumer.Consumer.OffsetRetrieval
 import zio.kafka.consumer.Consumer.AutoOffsetStrategy
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.producer.ProducerConfig
-import org.apache.spark.sql.{SparkSession, DataFrame}
+import org.apache.spark.sql.{DataFrame, Encoder, Row, SparkSession}
 import java.nio.file.{Files, Paths}
 import java.io.File
+import java.nio.file.Path
 
 object ETLTest extends ZIOSpecDefault {
+  val sparkLayer: ZLayer[Scope, Throwable, SparkSession] = ZLayer.scoped(ZIO.acquireRelease {
+    ZIO.succeed {
+      SparkSession
+        .builder()
+        .appName("ETLTest")
+        .master("local[*]")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    }
+  }(spark => ZIO.succeed(spark.close())))
 
   case class Person(id: Long, name: String, age: Int)
   val exampleData: List[Person] = List(
@@ -28,12 +40,17 @@ object ETLTest extends ZIOSpecDefault {
     Person(4, "Dave", 40),
     Person(5, "Eve", 22)
   )
+  val tempDirLayer: ZLayer[Scope, Throwable, Path] = ZLayer {
+    ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("dataframe-io-test")))(dir =>
+      ZIO.attempt(deleteRecursively(dir)).ignoreLogged
+    )
+  }
 
-  private val testTopic = "test-topic"
-  private val testDeltaPath = {
-    val tempDir = Files.createTempDirectory("dataframe-io-test").toFile()
-    tempDir.deleteOnExit()
-    tempDir.getAbsolutePath()
+  private def deleteRecursively(path: Path): Unit = {
+    if (Files.isDirectory(path)) {
+      Files.list(path).forEach(deleteRecursively)
+    }
+    Files.delete(path)
   }
 
   private def producerSettings(bootstrapServers: String): ProducerSettings =
@@ -50,40 +67,37 @@ object ETLTest extends ZIOSpecDefault {
       .withProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true")
       .withCloseTimeout(5.seconds)
 
-  private def createSparkSession(): SparkSession = {
-    SparkSession.builder()
-      .appName("ETLTest")
-      .master("local[*]")
-      .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-      .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-      .getOrCreate()
-  }
-
   def spec = suite("ETL Test")(
     test("should run ETL from Kafka to Delta") {
       for {
+        spark <- ZIO.service[SparkSession]
+        testDeltaPath <- ZIO.service[Path]
+        randomNumber <- Random.nextIntBounded(1000)
+        topic <- ZIO.succeed(s"test-topic-$randomNumber")
         kafka <- ZIO.service[KafkaContainer]
         bootstrapServers = kafka.bootstrapServers
         producer <- Producer.make(producerSettings(bootstrapServers))
         _ <- ZIO.foreach(exampleData) { person =>
-               val json = s"""{"id": ${person.id}, "name": "${person.name}", "age": ${person.age}}"""
-               producer.produce(new ProducerRecord(testTopic, "key1", json), Serde.string, Serde.string)
-             }
+          val json = s"""{"id": ${person.id}, "name": "${person.name}", "age": ${person.age}}"""
+          producer.produce(new ProducerRecord(topic, "key1", json), Serde.string, Serde.string)
+        }
         _ <- ZIO.attempt {
           val args = Array(
-            "--master", "local[*]",
-            "--source", s"kafka://${bootstrapServers.replaceFirst("PLAINTEXT://", "")}/$testTopic?serde=json",
-            "--sink", s"console://foo",
-            "--sink", s"delta://$testDeltaPath"
+            "--master",
+            "local[*]",
+            "--source",
+            s"kafka://${bootstrapServers.replaceFirst("PLAINTEXT://", "")}/$topic?serde=json",
+            "--sink",
+            s"console://foo",
+            "--sink",
+            s"delta://$testDeltaPath"
           )
           println(args.mkString(" "))
           ETL.main(args)
         }
         result <- ZIO.attempt {
-          val spark = createSparkSession()
-          val deltaDF = spark.read.format("delta").load(testDeltaPath)
+          val deltaDF = spark.read.format("delta").load(testDeltaPath.toString())
           val rows = deltaDF.collect()
-          spark.close()
           rows
         }
 
@@ -92,6 +106,62 @@ object ETLTest extends ZIOSpecDefault {
         assert(result.map(_.getAs[Long]("id")).toSet)(equalTo(exampleData.map(_.id).toSet)) &&
         assert(result.map(_.getAs[String]("name")).toSet)(equalTo(exampleData.map(_.name).toSet))
       }
-    } @@ TestAspect.timeout(120.seconds)
-  ).provideSomeLayerShared(DockerLayer.kafkaTestContainerLayer)
+    } @@ TestAspect.timeout(60.seconds),
+    test("should run streaming ETL from Kafka to Delta with intermediate assertions") {
+      val thisExampleData = exampleData.map(person => Person(person.id + 1000, person.name, person.age))
+      for {
+        spark <- ZIO.service[SparkSession]
+        testDeltaPath <- ZIO.service[Path]
+        randomNumber <- Random.nextIntBounded(1000).map(_ + 1000)
+        topic <- ZIO.succeed(s"test-topic-$randomNumber")
+        kafka <- ZIO.service[KafkaContainer]
+        bootstrapServers = kafka.bootstrapServers
+        producer <- Producer.make(producerSettings(bootstrapServers))
+
+        // Start the streaming ETL job concurrently in a fiber.
+        etlFiber <- ZIO.attempt {
+          val schema = org.apache.spark.sql.Encoders.product[Person].schema
+          val schemaURL = java.net.URLEncoder.encode(schema.json, "UTF-8")
+          val args = Array(
+            "--master",
+            "local[*]",
+            "--source",
+            s"kafka-stream://${bootstrapServers.replaceFirst("PLAINTEXT://", "")}/$topic?serde=json:$schemaURL&startingOffsets=earliest",
+            "--sink",
+            s"delta://$testDeltaPath?checkpointLocation=$testDeltaPath/checkpoint"
+          )
+          println("Starting ETL.main with: " + args.mkString(" "))
+          ETL.main(args)
+        }.fork
+
+        // Allow the ETL job to fully initialize.
+        _ <- ZIO.sleep(2.seconds)
+
+        // Produce records and, after each send, check the intermediate Delta table state.
+        assertions <- ZStream
+          .fromIterable(thisExampleData.zipWithIndex)
+          .mapZIO { case (person, idx) =>
+            val json = s"""{"id": ${person.id}, "name": "${person.name}", "age": ${person.age}}"""
+            for {
+              _ <- producer.produce(new ProducerRecord(topic, "key1", json), Serde.string, Serde.string)
+              assertion <- ZIO
+                .attempt {
+                  import spark.implicits._
+                  spark.read.format("delta").load(testDeltaPath.toString()).as[Person].collect().toSeq
+                }
+                .map(rows => assert(rows)(contains(person)))
+                .filterOrFail(_.isSuccess)(new RuntimeException("Row not found"))
+                .retry(Schedule.spaced(250.milliseconds) && Schedule.recurs(60))
+            } yield assertion
+          }
+          .runCollect
+        _ <- etlFiber.interrupt
+      } yield {
+        assertions.reduce(_ && _)
+      }
+    } @@ TestAspect.timeout(60.seconds) @@ TestAspect.withLiveClock
+  )
+    .provideSomeLayer[Scope with KafkaContainer with SparkSession](tempDirLayer)
+    .provideSomeLayerShared[Scope with KafkaContainer](sparkLayer)
+    .provideSomeLayerShared(DockerLayer.kafkaTestContainerLayer)
 }
