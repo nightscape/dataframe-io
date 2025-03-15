@@ -3,7 +3,7 @@ package dev.mauch.spark.dfio
 import com.dimafeng.testcontainers.{DockerComposeContainer, ExposedService}
 import org.testcontainers.images.builder.ImageFromDockerfile
 import zio.testcontainers._
-import zio.{Task, ZIO, ZLayer, Scope}
+import zio.{Scope, Task, ZIO, ZLayer}
 
 import java.time.Duration
 import java.util.Properties

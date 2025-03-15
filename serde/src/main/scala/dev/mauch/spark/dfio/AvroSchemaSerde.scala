@@ -40,7 +40,6 @@ object AvroSchemaSerde {
   }
 }
 
-
 object AvroSerdeConstructor extends ValueSerde.Constructor {
   override def apply(serde: String, conf: Map[String, String]): Option[ValueSerde] = {
     val schema = conf.get("schema")

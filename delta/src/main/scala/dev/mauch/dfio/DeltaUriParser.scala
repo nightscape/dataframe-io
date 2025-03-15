@@ -46,12 +46,7 @@ class DeltaUriParser extends DataFrameUriParser {
     "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog"
   )
   def schemes: Seq[String] = Seq("delta")
-  override def apply(uri: java.net.URI): SparkSession => DataFrameSource with DataFrameSink = {
-    spark =>
-      new DeltaDataFrameSource(
-        spark,
-        uri.getPath,
-        options = uri.queryParams
-      )
+  override def apply(uri: java.net.URI): SparkSession => DataFrameSource with DataFrameSink = { spark =>
+    new DeltaDataFrameSource(spark, uri.getPath, options = uri.queryParams)
   }
 }
