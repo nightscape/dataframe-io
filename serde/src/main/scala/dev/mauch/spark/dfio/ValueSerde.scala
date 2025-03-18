@@ -14,11 +14,7 @@ trait ValueSerde {
 
 object ValueSerde {
   type Constructor = Function2[String, Map[String, String], Option[ValueSerde]]
-  val constructors: List[Constructor] = List(
-    NoneSerdeConstructor,
-    JsonSerdeConstructor,
-    AvroSerdeConstructor
-  )
+  val constructors: List[Constructor] = List(NoneSerdeConstructor, JsonSerdeConstructor, AvroSerdeConstructor)
   def apply(serde: String, conf: Map[String, String], topic: String): ValueSerde =
     constructors.flatMap { c => c(serde, conf) }.headOption.getOrElse {
       throw new IllegalArgumentException(s"No constructor found for serde $serde and conf $conf")
