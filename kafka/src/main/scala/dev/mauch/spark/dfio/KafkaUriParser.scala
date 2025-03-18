@@ -9,13 +9,13 @@ class KafkaUriParser extends DataFrameUriParser {
   override def apply(uri: java.net.URI): SparkSession => DataFrameSource with DataFrameSink = {
     val isStream = uri.getScheme == "kafka-stream"
     spark =>
-        KafkaDataFrameSource(
-          spark,
-          broker = s"${uri.getHost}:${uri.getPort}",
-          topic = uri.pathParts.head,
-          serde = uri.queryParams.getOrElse("serde", "json"),
-          isStream = isStream,
-          additionalOptions = uri.queryParams.filterNot(_._1 == "serde")
-        )
+      KafkaDataFrameSource(
+        spark,
+        broker = s"${uri.getHost}:${uri.getPort}",
+        topic = uri.pathParts.head,
+        serde = uri.queryParams.getOrElse("serde", "json"),
+        isStream = isStream,
+        additionalOptions = uri.queryParams.filterNot(_._1 == "serde")
+      )
   }
 }

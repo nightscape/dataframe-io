@@ -7,4 +7,3 @@ trait DataFrameUriParser extends PartialFunction[java.net.URI, SparkSession => D
   def schemes: Seq[String]
   def isDefinedAt(uri: java.net.URI): Boolean = schemes.contains(uri.getScheme)
 }
-

@@ -15,7 +15,7 @@ case class ConsoleDataFrameSink(spark: SparkSession) extends DataFrameSource wit
 
 class ConsoleUriParser extends DataFrameUriParser {
   def schemes: Seq[String] = Seq("console")
-  override def apply(uri: java.net.URI): SparkSession => DataFrameSource with DataFrameSink = {
-    spark => new ConsoleDataFrameSink(spark)
+  override def apply(uri: java.net.URI): SparkSession => DataFrameSource with DataFrameSink = { spark =>
+    new ConsoleDataFrameSink(spark)
   }
 }

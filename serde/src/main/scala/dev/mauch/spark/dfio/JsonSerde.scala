@@ -1,7 +1,7 @@
 package dev.mauch.spark.dfio
 
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.{col, from_json, struct, schema_of_json, to_json}
+import org.apache.spark.sql.functions.{col, from_json, schema_of_json, struct, to_json}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.types.DataType
 
