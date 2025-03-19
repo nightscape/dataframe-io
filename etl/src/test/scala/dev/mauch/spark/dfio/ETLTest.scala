@@ -40,9 +40,13 @@ object ETLTest extends ZIOSpecDefault {
     Person(5, "Eve", 22)
   )
   case class BossRelation(employeeId: Long, bossId: Option[Long])
-  val bossRelations: List[BossRelation] = exampleData.map(person => BossRelation(person.id, exampleData.filter(_.id > person.id).sortBy(_.id).headOption.map(_.id)))
+  val bossRelations: List[BossRelation] = exampleData.map(person =>
+    BossRelation(person.id, exampleData.filter(_.id > person.id).sortBy(_.id).headOption.map(_.id))
+  )
   case class Employee(id: Long, name: String, bossId: Option[Long])
-  val employees: List[Employee] = exampleData.map(person => Employee(person.id, person.name, bossRelations.find(_.employeeId == person.id).flatMap(_.bossId)))
+  val employees: List[Employee] = exampleData.map(person =>
+    Employee(person.id, person.name, bossRelations.find(_.employeeId == person.id).flatMap(_.bossId))
+  )
   val tempDirLayer: ZLayer[Scope, Throwable, Path] = ZLayer {
     ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("dataframe-io-test")))(dir =>
       ZIO.attempt(deleteRecursively(dir)).ignoreLogged
@@ -88,8 +92,12 @@ object ETLTest extends ZIOSpecDefault {
           val args = s"""
             --master local[*]
             --source kafka://${bootstrapServers.replaceFirst("PLAINTEXT://", "")}/$topic?serde=json
-            --sink console://foo
-            --sink delta://$testDeltaPath
+            --source expected+values:///?header=id:long,name:string,age:long&values=${exampleData
+              .map(person => s"${person.id},${person.name},${person.age}")
+              .mkString(";")}
+            --transform source+diffResult+diff:///expected?id=id&handleDifferences=filter
+            --sink diffResult+console://foo
+            --sink diffResult+delta://$testDeltaPath
           """.split("\\s+").filter(_.nonEmpty)
           println(args.mkString(" "))
           ETL.main(args)
@@ -101,9 +109,7 @@ object ETLTest extends ZIOSpecDefault {
         }
 
       } yield {
-        assert(result.length)(equalTo(exampleData.length)) &&
-        assert(result.map(_.getAs[Long]("id")).toSet)(equalTo(exampleData.map(_.id).toSet)) &&
-        assert(result.map(_.getAs[String]("name")).toSet)(equalTo(exampleData.map(_.name).toSet))
+        assert(result)(equalTo(Array.empty[Row]))
       }
     } @@ TestAspect.timeout(60.seconds),
     test("should run streaming ETL from Kafka to Delta") {
@@ -134,19 +140,25 @@ object ETLTest extends ZIOSpecDefault {
             people.id = bossRelations.employeeId
         """.trim
         // Start the streaming ETL job concurrently in a fiber.
-        etlFiber <- ZIO.attempt {
-          val schema = org.apache.spark.sql.Encoders.product[Person].schema
-          val schemaURL = java.net.URLEncoder.encode(schema.json, "UTF-8")
-          val args = s"""
+        etlFiber <- ZIO
+          .attempt {
+            val schema = org.apache.spark.sql.Encoders.product[Person].schema
+            val schemaURL = java.net.URLEncoder.encode(schema.json, "UTF-8")
+            val args = s"""
             --master local[*]
-            --source people+kafka-stream://${bootstrapServers.replaceFirst("PLAINTEXT://", "")}/$topic?serde=json:$schemaURL&startingOffsets=earliest
+            --source people+kafka-stream://${bootstrapServers.replaceFirst(
+                "PLAINTEXT://",
+                ""
+              )}/$topic?serde=json:$schemaURL&startingOffsets=earliest
             --source bossRelations+avro://${testDeltaPath}/bossRelations
             --transform people+employees+sql:///${URLEncoder.encode(sql.replaceAll("\\s+", " "), "UTF-8")}
             --sink employees+delta://$testDeltaPath/employees?checkpointLocation=$testDeltaPath/checkpoint
           """.split("\\s+").filter(_.nonEmpty)
-          println("Starting ETL.main with: " + args.mkString(" "))
-          ETL.main(args)
-        }.debug.fork
+            println("Starting ETL.main with: " + args.mkString(" "))
+            ETL.main(args)
+          }
+          .debug
+          .fork
 
         // Allow the ETL job to fully initialize.
         _ <- ZIO.sleep(2.seconds)
